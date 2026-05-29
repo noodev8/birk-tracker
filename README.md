@@ -1,14 +1,24 @@
 # birk-tracker
 
-Parses a Birkenstock invoice PDF and writes the relevant fields out as JSON,
-ready to be fed into a database.
+Parses a Birkenstock invoice PDF, writes the relevant fields out as JSON, and
+applies them to the `birktracker` PostgreSQL table.
 
 ## Setup
 
-Requires Python 3.10+ and one dependency:
+Requires Python 3.10+ and these dependencies:
 
 ```
-pip install pdfplumber
+pip install pdfplumber psycopg2-binary python-dotenv
+```
+
+Set up your `.env` and fill in your database credentials:
+
+```
+DB_HOST=
+DB_PORT=5432
+DB_NAME=
+DB_USER=
+DB_PASSWORD=
 ```
 
 ## Usage
@@ -16,11 +26,34 @@ pip install pdfplumber
 Drop the invoice PDF into this folder and run:
 
 ```
-python birk-tracker.py
+python birk-tracker.py            # parse PDF, write JSON, then update DB
+python birk-tracker.py --dry-run  # do everything except COMMIT
+python birk-tracker.py --no-db    # parse PDF only, skip the DB step
 ```
 
 The script picks up the first `*.pdf` it finds next to itself and writes the
 result to `invoice.json` in the same folder.
+
+## Database behaviour
+
+Each invoice line is matched against `birktracker` by padded `ordernum` (10
+digits), `bksize`, and a `code` prefix matching the padded article code (7
+digits). Matched rows have their `invoiced` quantity added to, and
+`invoicedate` / `invoicenum` set to the current invoice.
+
+Per-row flags prompt before continuing:
+
+| Flag | Trigger | Options |
+| --- | --- | --- |
+| `MISSING` | no row found | `[a]`dd new row (auto-constructed code, editable) / `[i]`gnore |
+| `AMBIGUOUS` | multiple rows found | pick `[1-N]` / `[i]`gnore |
+| `ALREADY_INVOICED` | matched row already has this invoice number applied | `[a]`dd anyway / `[i]`gnore |
+
+For `[a]`dd, the new `code` is built as `<padded_article>-<STYLE>-<EU_size>`
+where `STYLE` is derived from any existing `birktracker` row for the same
+article. Everything else (`requested`, `placedate`, `cost`, …) is left NULL
+for new rows. All changes happen inside a single transaction with a final
+confirm prompt before commit.
 
 ## Output
 
@@ -52,5 +85,5 @@ result to `invoice.json` in the same folder.
 | `total_invoiced` | Total number of pairs on the invoice (`Sum of pos.`) |
 | `items[].article_code` | Article (product) code |
 | `items[].total_quantity` | Total pairs invoiced for that article |
-| `items[].order_number` | Order this article belongs to (overrides the header when the invoice lists multiple orders) |
+| `items[].order_number` | Order this article belongs to. Defaults to the header `order_number`; only overridden when an `Order <num> vom <date>` marker sits directly below the item's sizes. Each marker applies only to its own item — subsequent items fall back to the header order. |
 | `items[].sizes` | Per-size breakdown with the quantity invoiced |

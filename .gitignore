@@ -67,6 +67,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# birk-tracker intermediate output
+invoice.json
+
 # Misc
 *.iml
 *.lock
@@ -74,3 +77,4 @@ __pycache__/
 DB_Schema.sql
 
 .vercel
+schema.sql
