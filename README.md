@@ -31,8 +31,10 @@ python birk-tracker.py --dry-run  # do everything except COMMIT
 python birk-tracker.py --no-db    # parse PDF only, skip the DB step
 ```
 
-The script picks up the first `*.pdf` it finds next to itself and writes the
-result to `invoice.json` in the same folder.
+The script picks up the `*.pdf` it finds next to itself and writes the
+result to `invoice.json` in the same folder. If more than one PDF is present
+the script will stop and list them — remove the ones you don't want so only
+the invoice to process remains, then re-run.
 
 ## Database behaviour
 
@@ -45,9 +47,12 @@ Per-row flags prompt before continuing:
 
 | Flag | Trigger | Options |
 | --- | --- | --- |
-| `MISSING` | no row found | `[a]`dd new row (auto-constructed code, editable) / `[i]`gnore |
-| `AMBIGUOUS` | multiple rows found | pick `[1-N]` / `[i]`gnore |
-| `ALREADY_INVOICED` | matched row already has this invoice number applied | `[a]`dd anyway / `[i]`gnore |
+| `MISSING` | no row found | `[a]`dd new row (auto-constructed code, editable) / `[i]`gnore / `[q]`uit |
+| `AMBIGUOUS` | multiple rows found | pick `[1-N]` / `[i]`gnore / `[q]`uit |
+| `ALREADY_INVOICED` | matched row already has this invoice number applied | `[a]`dd anyway / `[i]`gnore / `[q]`uit |
+
+`[q]`uit is available at every prompt (including the final `Proceed?`) and
+aborts the run immediately without committing anything to the database.
 
 For `[a]`dd, the new `code` is built as `<padded_article>-<STYLE>-<EU_size>`
 where `STYLE` is derived from any existing `birktracker` row for the same

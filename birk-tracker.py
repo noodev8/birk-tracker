@@ -220,8 +220,15 @@ def _derive_style(cur, padded_article: str) -> str | None:
     return "-".join(parts[1:-1]) if len(parts) >= 3 else None
 
 
+class QuitRequested(Exception):
+    """Raised when the user types `q` at any prompt to abort without committing."""
+
+
 def _prompt(msg: str) -> str:
-    return input(msg).strip().lower()
+    choice = input(msg).strip().lower()
+    if choice == "q":
+        raise QuitRequested
+    return choice
 
 
 def _prompt_missing(cur, line: dict[str, Any], invoice_num: str, invoice_date: str) -> dict | None:
@@ -238,7 +245,7 @@ def _prompt_missing(cur, line: dict[str, Any], invoice_num: str, invoice_date: s
         print("  No existing rows found for this article — cannot derive style.")
 
     while True:
-        choice = _prompt("  [a]dd / [e]dit code / [i]gnore > ")
+        choice = _prompt("  [a]dd / [e]dit code / [i]gnore / [q]uit > ")
         if choice == "i":
             return None
         if choice in ("a", "e") or (choice == "" and suggested):
@@ -265,7 +272,7 @@ def _prompt_ambiguous(rows: list[dict], line: dict[str, Any]) -> dict | None:
         print(f"  [{i}] {r['code']}  invoiced={r['invoiced']}  "
               f"invoicenum={r['invoicenum']}  invoicedate={r['invoicedate']}")
     while True:
-        choice = _prompt(f"  pick [1-{len(rows)}] / [i]gnore > ")
+        choice = _prompt(f"  pick [1-{len(rows)}] / [i]gnore / [q]uit > ")
         if choice == "i":
             return None
         if choice.isdigit() and 1 <= int(choice) <= len(rows):
@@ -277,7 +284,7 @@ def _prompt_already_invoiced(row: dict, line: dict[str, Any]) -> bool:
     print(f"  already has invoicenum={row['invoicenum']}, invoiced={row['invoiced']}")
     print(f"  this run would add qty {line['qty']} "
           f"(-> {(row['invoiced'] or 0) + line['qty']})")
-    return _prompt("  [a]dd anyway / [i]gnore > ") == "a"
+    return _prompt("  [a]dd anyway / [i]gnore / [q]uit > ") == "a"
 
 
 def _connect():
@@ -369,18 +376,21 @@ def update_db(invoice: dict[str, Any], dry_run: bool) -> None:
               f"{invoice['total_invoiced']} pairs across {len(invoice['items'])} articles")
         print("Connecting to DB … ok")
 
-        plan = build_plan(cur, invoice)
+        try:
+            plan = build_plan(cur, invoice)
 
-        print(f"\nSummary:")
-        print(f"  {len(plan.updates)} updates · {len(plan.inserts)} inserts · {plan.ignored} ignored")
-        if not plan.updates and not plan.inserts:
-            print("Nothing to do.")
-            return
-        if _prompt("Proceed? [y/N] > ") != "y":
-            print("Aborted.")
-            return
+            print(f"\nSummary:")
+            print(f"  {len(plan.updates)} updates · {len(plan.inserts)} inserts · {plan.ignored} ignored")
+            if not plan.updates and not plan.inserts:
+                print("Nothing to do.")
+                return
+            if _prompt("Proceed? [y/N] / [q]uit > ") != "y":
+                print("Aborted.")
+                return
 
-        apply_plan(conn, plan, dry_run)
+            apply_plan(conn, plan, dry_run)
+        except QuitRequested:
+            print("\nQuit — nothing committed.")
     finally:
         conn.close()
 
@@ -390,7 +400,12 @@ def _find_pdf(folder: Path) -> Path:
     if not pdfs:
         sys.exit(f"No PDF file found in {folder}")
     if len(pdfs) > 1:
-        print(f"Multiple PDFs found, using: {pdfs[0].name}", file=sys.stderr)
+        names = "\n  ".join(p.name for p in pdfs)
+        sys.exit(
+            f"Multiple PDFs found in {folder}:\n  {names}\n"
+            "Please remove the ones you don't want so only the invoice to "
+            "process remains, then re-run."
+        )
     return pdfs[0]
 
 
